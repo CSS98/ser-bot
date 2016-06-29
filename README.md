@@ -35,7 +35,7 @@ Then restart the bot.
 
 # Support and development [Developr <[Nn]>](https://telegram.me/iq_devloper) 🐾
 
-# Special thanks to [@teleseed](https://telegram.me/teleseedCH) ❤️
+# Special thanks to [@BoTMasters](https://telegram.me/MastersDev) ❤️
 
 For managing on Telegram.
 Development [@ilwil](https://telegram.me/ilwil) ❤️
