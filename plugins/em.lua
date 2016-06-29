@@ -1,48 +1,129 @@
-antiarabic = {}-- An empty table for solving multiple kicking problem
-
 do
-local function run(msg, matches)
-  if is_momod(msg) then -- Ignore mods,owner,admins
-    return
+local socket = require("socket")
+local cronned = load_from_file('data/isup.lua')
+
+local function save_cron(msg, url, delete)
+  local origin = get_receiver(msg)
+  if not cronned[origin] then
+    cronned[origin] = {}
   end
-  local data = load_data(_config.moderation.data)
-  if data[tostring(msg.to.id)]['settings']['lock_arabic'] then
-    if data[tostring(msg.to.id)]['settings']['lock_arabic'] == 'yes' then
-	  if is_whitelisted(msg.from.id) then
-		return
-	  end
-      if antiarabic[msg.from.id] == true then 
-        return
+  if not delete then
+    table.insert(cronned[origin], url)
+  else
+    for k,v in pairs(cronned[origin]) do
+      if v == url then
+        table.remove(cronned[origin], k)
       end
-	  if msg.to.type == 'chat' then
-		local receiver = get_receiver(msg)
-		local username = msg.from.username
-		local name = msg.from.first_name
-		if username and is_super_group(msg) then
-			send_large_msg(receiver , "Arabic/Persian is not allowed here\n@"..username.."["..msg.from.id.."]\nStatus: User kicked/msg deleted")
-		else
-			send_large_msg(receiver , "Arabic/Persian is not allowed here\nName: "..name.."["..msg.from.id.."]\nStatus: User kicked/msg deleted")
-		end
-		local name = user_print_name(msg.from)
-		savelog(msg.to.id, name.." ["..msg.from.id.."] kicked (arabic was locked) ")
-		local chat_id = msg.to.id
-		local user_id = msg.from.id
-			kick_user(user_id, chat_id)
-		end
-		antiarabic[msg.from.id] = true
     end
   end
-  return
+  serialize_to_file(cronned, 'data/isup.lua')
+  return 'Saved!'
+end
+
+local function is_up_socket(ip, port)
+  print('Connect to', ip, port)
+  local c = socket.try(socket.tcp())
+  c:settimeout(3)
+  local conn = c:connect(ip, port)
+  if not conn then
+    return false
+  else
+    c:close()
+    return true
+  end
+end
+
+local function is_up_http(url)
+  -- Parse URL from input, default to http
+  local parsed_url = URL.parse(url,  { scheme = 'http', authority = '' })
+  -- Fix URLs without subdomain not parsed properly
+  if not parsed_url.host and parsed_url.path then
+    parsed_url.host = parsed_url.path
+    parsed_url.path = ""
+  end
+  -- Re-build URL
+  local url = URL.build(parsed_url)
+
+  local protocols = {
+    ["https"] = https,
+    ["http"] = http
+  }
+  local options =  {
+    url = url,
+    redirect = false,
+    method = "GET"
+  }
+  local response = { protocols[parsed_url.scheme].request(options) }
+  local code = tonumber(response[2])
+  if code == nil or code >= 400 then
+    return false
+  end
+  return true
+end
+
+local function isup(url)
+  local pattern = '^(%d%d?%d?%.%d%d?%d?%.%d%d?%d?%.%d%d?%d?):?(%d?%d?%d?%d?%d?)$'
+  local ip,port = string.match(url, pattern)
+  local result = nil
+
+  -- !isup 8.8.8.8:53
+  if ip then
+    port = port or '80'
+    result = is_up_socket(ip, port)
+  else
+    result = is_up_http(url)
+  end
+
+  return result
 end
 
 local function cron()
-  antiarabic = {} -- Clear antiarabic table 
+  for chan, urls in pairs(cronned) do
+    for k,url in pairs(urls) do
+      print('Checking', url)
+      if not isup(url) then
+        local text = url..' looks DOWN from here. ًںک±'
+        send_msg(chan, text, ok_cb, false)
+      end
+    end
+  end
+end
+
+local function run(msg, matches)
+  if matches[1] == 'cron delete' then
+    if not is_sudo(msg) then 
+      return 'This command requires privileged user'
+    end
+    return save_cron(msg, matches[2], true)
+
+  elseif matches[1] == 'cron' then
+    if not is_sudo(msg) then 
+      return 'This command requires privileged user'
+    end
+    return save_cron(msg, matches[2])
+
+  elseif isup(matches[1]) then
+    return matches[1]..' looks UP from here. ًںکƒ'
+  else
+    return matches[1]..' looks DOWN from here. ًںک±'
+  end
 end
 
 return {
+  description = "Check if a website or server is up.",
+  usage = {
+    "!isup [host]: Performs a HTTP request or Socket (ip:port) connection",
+    "!isup cron [host]: Every 5mins check if host is up. (Requires privileged user)",
+    "!isup cron delete [host]: Disable checking that host."
+  },
   patterns = {
-    "([\216-\219][\128-\191])"
-    },
+    "^!isup (cron delete) (.*)$",
+    "^!isup (cron) (.*)$",
+    "^!isup (.*)$",
+    "^!ping (.*)$",
+    "^!ping (cron delete) (.*)$",
+    "^!ping (cron) (.*)$"
+  },
   run = run,
   cron = cron
 }
